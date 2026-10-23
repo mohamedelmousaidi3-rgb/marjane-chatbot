@@ -61,6 +61,8 @@ Edit `knowledge.json` to change the chatbot's personality, rules, language, or s
 - `st.chat_message()` displays each message.
 - `st.chat_input()` collects the next question.
 - The sidebar includes a selectable FAQ list for common questions.
-- `st.session_state.messages` stores the current conversation in memory.
+- `st.session_state.messages` stores the current conversation in memory. The
+  eight latest messages are sent to the model to keep requests within the
+  free-tier token limit.
 - The **Clear conversation** button starts a fresh conversation.
 - The app uses Groq's `openai/gpt-oss-20b` model and displays a friendly error if the API is unavailable.

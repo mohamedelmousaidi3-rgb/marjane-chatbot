@@ -23,6 +23,42 @@ def get_api_key():
     return os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
 
 
+def build_system_prompt(knowledge: dict) -> str:
+    """Keep useful facts while avoiding an oversized API request."""
+    instructions = knowledge.get("system_instructions", [])
+    if isinstance(instructions, list):
+        instructions = "\n".join(f"- {item}" for item in instructions)
+
+    # The full file also includes metadata and test cases, which the chatbot
+    # does not need for answering and which can exceed a free-tier token limit.
+    facts = [
+        {
+            "fact": item.get("fact"),
+            "status": item.get("status"),
+            "source_ids": item.get("source_ids"),
+        }
+        for item in knowledge.get("knowledge", [])
+    ]
+    sources = {
+        item.get("id"): item.get("url")
+        for item in knowledge.get("sources", [])
+        if item.get("id") and item.get("url")
+    }
+    context = {
+        "company": knowledge.get("company", {}),
+        "assistant": knowledge.get("assistant", {}),
+        "facts": facts,
+        "limitations": knowledge.get("limitations", []),
+        "official_source_urls": sources,
+    }
+
+    return f"""{instructions}
+
+Use this knowledge base:
+{json.dumps(context, ensure_ascii=False, indent=2)}
+"""
+
+
 knowledge = load_knowledge()
 company_name = knowledge.get("company", {}).get("name", "Assistant")
 assistant_name = knowledge.get("assistant", {}).get("name", f"{company_name} Assistant")
@@ -72,22 +108,11 @@ if prompt:
         st.error("Add your Groq API key to the .env file, then restart the app.")
         st.stop()
 
-    # The JSON file supplies the rules, facts, limits, and source links.
-    instructions = knowledge.get("system_instructions", [])
-    if isinstance(instructions, list):
-        instructions = "\n".join(f"- {item}" for item in instructions)
-
-    system_prompt = f"""{instructions}
-
-Assistant profile:
-{json.dumps(knowledge.get('assistant', {}), ensure_ascii=False, indent=2)}
-
-Knowledge base (facts, FAQ guidance, limitations, and sources):
-{json.dumps(knowledge, ensure_ascii=False, indent=2)}
-"""
+    system_prompt = build_system_prompt(knowledge)
 
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(st.session_state.messages)
+    # Keep recent context to control request size during a long session.
+    messages.extend(st.session_state.messages[-8:])
 
     try:
         client = Groq(api_key=api_key)
